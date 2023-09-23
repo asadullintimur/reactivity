@@ -45,3 +45,11 @@ export const getDependencyByPrimitive = val => {
 
     return dependency;
 }
+
+export const getDependencyByExpression = expression => {
+    return {
+        get value() {
+            return expression()
+        }
+    }
+}
