@@ -1,23 +1,53 @@
-const subscribers = new Map();
+const subscribersMap = new Map();
 
 let activeEffect;
 
-const addSubscriber = dependency => {
-    if (!activeEffect) return;
+//HELPERS
+const checkIsPrimitive = val => typeof val !== 'object' || val === null;
 
-    const dependencySubscribers = subscribers.get(dependency);
+//SUBSCRIBE FUNCTIONALITY
+const getDependencies = (key) => {
+    let dependencies = subscribersMap.get(key);
 
-    if (dependencySubscribers) {
-        dependencySubscribers.push(activeEffect)
-    } else {
-    subscribers.set(dependency, [activeEffect])
+    if (!dependencies) {
+        dependencies = {};
+
+        subscribersMap.set(key, dependencies)
     }
+
+    return dependencies;
+}
+const getSubscribersByDependencies = (dependencies, prop) => {
+    let subscribers = dependencies[prop];
+
+    if (!subscribers) {
+        subscribers = [];
+
+        dependencies[prop] = subscribers;
+    }
+
+    return subscribers;
 }
 
-const executeSubscribers = dependency => {
-    const dependencySubscribers = subscribers.get(dependency);
+const getSubscribers = (key, prop) => {
+    const dependencies = getDependencies(key),
+        subscribers = getSubscribersByDependencies(dependencies, prop);
 
-    dependencySubscribers.forEach(effect => effect())
+    return subscribers;
+}
+
+const addSubscriber = (key, prop) => {
+    if (!activeEffect) return;
+
+    const subscribers = getSubscribers(key, prop);
+
+    subscribers.push(activeEffect)
+}
+
+const executeSubscribers = (key, prop) => {
+    const subscribers = getSubscribers(key, prop);
+
+    subscribers.forEach(effect => effect())
 }
 
 export const subscribeOnDependencies = func => {
@@ -28,10 +58,35 @@ export const subscribeOnDependencies = func => {
     activeEffect = null;
 }
 
+//REACTIVE WRAPPERS
+export const getDependencyByObject = obj => {
+    const nestedDependencies = {};
+
+    return new Proxy(obj, {
+        get(target, prop) {
+            addSubscriber(target, prop)
+
+            const value = target[prop];
+
+            if (checkIsPrimitive(value)) return value;
+
+            return nestedDependencies[prop] || getDependencyByObject(value);
+        },
+
+        set(target, prop, val) {
+            target[prop] = val;
+
+            executeSubscribers(target, prop)
+
+            return true;
+        }
+    })
+}
+
 export const getDependencyByPrimitive = val => {
-    const dependency = {
+    const reactiveWrapper = {
         get value() {
-            addSubscriber(dependency);
+            addSubscriber(reactiveWrapper, 'value');
 
             return val;
         },
@@ -39,11 +94,11 @@ export const getDependencyByPrimitive = val => {
         set value(newVal) {
             val = newVal;
 
-            executeSubscribers(dependency);
+            executeSubscribers(reactiveWrapper, 'value');
         }
     }
 
-    return dependency;
+    return reactiveWrapper;
 }
 
 export const getDependencyByExpression = expression => {
